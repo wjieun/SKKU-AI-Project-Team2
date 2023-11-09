@@ -1,0 +1,4 @@
+[core]
+    remote = jiyun_gdrive
+['remote "jiyun_gdrive"']
+    url = gdrive://1pwwfwJbIEQob5QgBx3EXpdTK-PFa2Uck
