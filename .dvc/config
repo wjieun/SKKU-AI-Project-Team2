@@ -1,0 +1,4 @@
+[core]
+    remote = gdrive_yunbo
+['remote "gdrive_yunbo"']
+    url = gdrive://1vKEqJIypGbaKudx-DR1LnLXAo91o6_J8
