@@ -2,8 +2,6 @@ import torch
 import torch.nn as nn
 import torchvision
 
-# Model
-
 class ConvBlock(nn.Module):
     """
     Helper module that consists of a Conv -> BN -> ReLU
@@ -22,16 +20,6 @@ class ConvBlock(nn.Module):
         if self.with_nonlinearity:
             x = self.relu(x)
         return x
-
-def double_conv(in_channels, out_channels):
-    return nn.Sequential(
-        nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1),
-        nn.BatchNorm2d(out_channels),
-        nn.ReLU(inplace=True),
-        nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1),
-        nn.BatchNorm2d(out_channels),
-        nn.ReLU(inplace=True)
-    )
 
 
 class Bridge(nn.Module):
@@ -71,14 +59,8 @@ class UpBlockForUNetWithResNet50(nn.Module):
                 nn.Upsample(mode='bilinear', scale_factor=2),
                 nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1)
             )
-        self.double_conv = nn.Sequential(
-              nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1),
-              nn.BatchNorm2d(out_channels),
-              nn.ReLU(inplace=True),
-              nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1),
-              nn.BatchNorm2d(out_channels),
-              nn.ReLU(inplace=True)
-          )
+        self.conv_block_1 = ConvBlock(in_channels, out_channels)
+        self.conv_block_2 = ConvBlock(out_channels, out_channels)
 
     def forward(self, up_x, down_x):
         """
@@ -89,65 +71,65 @@ class UpBlockForUNetWithResNet50(nn.Module):
         """
         x = self.upsample(up_x)
         x = torch.cat([x, down_x], 1)
-        x = self.double_conv(x)
+        x = self.conv_block_1(x)
+        x = self.conv_block_2(x)
         return x
 
 
 class UNetWithResnet50Encoder(nn.Module):
-    DEPTH = 5
+    DEPTH = 6
 
     def __init__(self, n_channels=3, n_classes=1):
         super().__init__()
-        self.vgg = torchvision.models.vgg16_bn(pretrained=True)
+        resnet = torchvision.models.resnet.resnet50(pretrained=True)
         down_blocks = []
         up_blocks = []
 
         # 입력 채널을 n_channels로 조정
-        '''
         self.input_block = nn.Sequential(
             nn.Conv2d(n_channels, 64, kernel_size=7, stride=2, padding=3, bias=False),
-            self.vgg.features[:6]
+            *list(resnet.children())[1:3]
         )
-        '''
+        self.input_pool = list(resnet.children())[3]
 
-        self.block1 = nn.Sequential(self.vgg.features[:6])
-        self.block2 = nn.Sequential(self.vgg.features[6:13])
-        self.block3 = nn.Sequential(self.vgg.features[13:20])
-        self.block4 = nn.Sequential(self.vgg.features[20:27])
-        self.block5 = nn.Sequential(self.vgg.features[27:34])
+        for bottleneck in list(resnet.children()):
+            if isinstance(bottleneck, nn.Sequential):
+                down_blocks.append(bottleneck)
+        self.down_blocks = nn.ModuleList(down_blocks)
+        self.bridge = Bridge(2048, 2048)
+        up_blocks.append(UpBlockForUNetWithResNet50(2048, 1024))
+        up_blocks.append(UpBlockForUNetWithResNet50(1024, 512))
+        up_blocks.append(UpBlockForUNetWithResNet50(512, 256))
+        up_blocks.append(UpBlockForUNetWithResNet50(in_channels=128 + 64, out_channels=128,
+                                                    up_conv_in_channels=256, up_conv_out_channels=128))
+        up_blocks.append(UpBlockForUNetWithResNet50(in_channels=64 + 3, out_channels=64,
+                                                    up_conv_in_channels=128, up_conv_out_channels=64))
 
-        self.bottleneck = nn.Sequential(self.vgg.features[34:])
+        self.up_blocks = nn.ModuleList(up_blocks)
 
-        self.bridge = double_conv(512, 1024)
-
-        self.upblock6 = UpBlockForUNetWithResNet50(1024, 512)
-        self.upblock7 = UpBlockForUNetWithResNet50(256 + 512, 256, 512, 256)
-        self.upblock8 = UpBlockForUNetWithResNet50(128 + 256, 128, 256, 128)
-        self.upblock9 = UpBlockForUNetWithResNet50(64 + 128, 64, 128, 64)
-        self.upblock10 = UpBlockForUNetWithResNet50(32 + 64, 32, 64, 32)
-
-        self.out = nn.Conv2d(32, n_classes, kernel_size=1, stride=1)
+        self.out = nn.Conv2d(64, n_classes, kernel_size=1, stride=1)
 
     def forward(self, x, with_output_feature_map=False):
-        block1 = self.block1(x)
-        block2 = self.block2(block1)
-        block3 = self.block3(block2)
-        block4 = self.block4(block3)
-        block5 = self.block5(block4)
+        pre_pools = dict()
+        pre_pools[f"layer_0"] = x
+        x = self.input_block(x)
+        pre_pools[f"layer_1"] = x
+        x = self.input_pool(x)
 
+        for i, block in enumerate(self.down_blocks, 2):
+            x = block(x)
+            if i == (UNetWithResnet50Encoder.DEPTH - 1):
+                continue
+            pre_pools[f"layer_{i}"] = x
 
-        bottleneck = self.bottleneck(block5)
-        x = self.bridge(bottleneck)
+        x = self.bridge(x)
 
-        x = self.upblock6(x, block5)
-        x = self.upblock7(x, block4)
-        x = self.upblock8(x, block3)
-        x = self.upblock9(x, block2)
-        x = self.upblock10(x, block1)
-
-
+        for i, block in enumerate(self.up_blocks, 1):
+            key = f"layer_{UNetWithResnet50Encoder.DEPTH - 1 - i}"
+            x = block(x, pre_pools[key])
         output_feature_map = x
         x = self.out(x)
+        del pre_pools
         if with_output_feature_map:
             return x, output_feature_map
         else:

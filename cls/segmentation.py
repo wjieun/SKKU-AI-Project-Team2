@@ -5,6 +5,7 @@ from albumentations.pytorch import ToTensorV2
 import matplotlib.pyplot as plt
 import albumentations as A
 import numpy as np
+from rembg import remove 
 from PIL import Image
 
 def heic_to_jpeg(heic_dir, jpeg_dir):
@@ -18,6 +19,17 @@ def heic_to_jpeg(heic_dir, jpeg_dir):
         heif_file.stride
         )
     image.save(jpeg_dir,"JPEG")
+
+def remove_background(jpg_dir, output_dir):
+  fill_color = (255,255,255)
+  img = Image.open(jpg_dir) 
+  out = remove(img) 
+  im = out.convert('RGBA')
+  if im.mode in ('RGBA', 'LA'):
+    background = Image.new(im.mode[:-1], im.size, fill_color)
+    background.paste(im, im.split()[-1]) # omit transparency
+    im = background
+  im.convert("RGB").save(output_dir)
 
 def preprocess_image(img_path, size=(256, 256)):
     image = cv2.imread(img_path)
@@ -57,5 +69,6 @@ def detect(jpeg_dir, output_dir, model, device, save=True):
 
 # Use as below
 # heic_to_jpeg("./inputs/IMG_6732.HEIC", "./inputs/IMG_6732.jpg")
+# remove_background('IMG_1726.jpg', 'IMG_1726_bg.jpg')
 # 밑의 모델은 seg_model을 통해 정의합니다.
 # detect("./inputs/IMG_6732.jpg", model , device, './outputs/IMG_6732_mask.jpg')
