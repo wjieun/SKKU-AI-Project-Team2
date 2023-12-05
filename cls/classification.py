@@ -3,7 +3,10 @@ import mediapipe as mp
 import cv2
 from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing import image
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import GlobalAveragePooling2D, Dense, Dropout
 from CLSmodule import classify
+from tensorflow.keras.applications import MobileNetV2
 
 hand_img = cv2.imread('../PLSU/img/image5.jpg')
 mask_img = cv2.imread('../PLSU/Mask/image5.png')
@@ -38,7 +41,7 @@ resized_heart_img = cv2.resize(heart_img, img_size)
 mask_array = np.expand_dims(resized_mask_img, axis=0)
 mask_array = mask_array.astype(np.float32) / 255.0
 
-head_loaded_model = load_model('head_model.h5')
+head_loaded_model = load_model('./cls/head_model.h5')
 head_pred = head_loaded_model.predict(mask_array)
 head_pred_class = 1 if head_pred[0][0] > 0.5 else 0
 
@@ -46,7 +49,20 @@ head_pred_class = 1 if head_pred[0][0] > 0.5 else 0
 mask_array = np.expand_dims(resized_life_img, axis=0)
 mask_array = mask_array.astype(np.float32) / 255.0
 
-life_loaded_model = load_model('life_model.h5')
+# Initialize MobileNetV2 model with pretrained ImageNet weights
+base_model = MobileNetV2(weights='imagenet', include_top=False, input_shape=(128, 128, 3))
+base_model.trainable = False  # Freeze base model
+
+life_loaded_model = Sequential([
+    base_model,
+    GlobalAveragePooling2D(),
+    Dense(128, activation='relu'),
+    Dropout(0.5),
+    Dense(8, activation='relu'),
+    Dropout(0.5),
+    Dense(1, activation='sigmoid')  # 1 unit for binary classification
+])
+life_loaded_model.load_weights('./cls/life_model.h5')
 life_pred = life_loaded_model.predict(mask_array)
 life_pred_class = 1 if life_pred[0][0] > 0.5 else 0
 
@@ -54,7 +70,17 @@ life_pred_class = 1 if life_pred[0][0] > 0.5 else 0
 mask_array = np.expand_dims(resized_heart_img, axis=0)
 mask_array = mask_array.astype(np.float32) / 255.0
 
-heart_loaded_model = load_model('heart_model.h5')
+heart_loaded_model = Sequential([
+    base_model,
+    GlobalAveragePooling2D(),
+    Dense(128, activation='relu'),
+    Dropout(0.5),
+    Dense(8, activation='relu'),
+    Dropout(0.5),
+    Dense(1, activation='sigmoid')  # 1 unit for binary classification
+])
+
+heart_loaded_model.load_weights('./cls/heart_model.h5')
 heart_pred = heart_loaded_model.predict(mask_array)
 heart_pred_class = 1 if heart_pred[0][0] > 0.5 else 0
 
