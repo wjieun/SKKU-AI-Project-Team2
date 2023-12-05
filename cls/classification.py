@@ -41,7 +41,7 @@ resized_heart_img = cv2.resize(heart_img, img_size)
 mask_array = np.expand_dims(resized_mask_img, axis=0)
 mask_array = mask_array.astype(np.float32) / 255.0
 
-head_loaded_model = load_model('./cls/head_model.h5')
+head_loaded_model = load_model('head_model.h5')
 head_pred = head_loaded_model.predict(mask_array)
 head_pred_class = 1 if head_pred[0][0] > 0.5 else 0
 
@@ -62,7 +62,7 @@ life_loaded_model = Sequential([
     Dropout(0.5),
     Dense(1, activation='sigmoid')  # 1 unit for binary classification
 ])
-life_loaded_model.load_weights('./cls/life_model.h5')
+life_loaded_model.load_weights('life_model.h5')
 life_pred = life_loaded_model.predict(mask_array)
 life_pred_class = 1 if life_pred[0][0] > 0.5 else 0
 
@@ -80,7 +80,7 @@ heart_loaded_model = Sequential([
     Dense(1, activation='sigmoid')  # 1 unit for binary classification
 ])
 
-heart_loaded_model.load_weights('./cls/heart_model.h5')
+heart_loaded_model.load_weights('heart_model.h5')
 heart_pred = heart_loaded_model.predict(mask_array)
 heart_pred_class = 1 if heart_pred[0][0] > 0.5 else 0
 
