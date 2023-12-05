@@ -8,9 +8,15 @@ from tensorflow.keras.layers import GlobalAveragePooling2D, Dense, Dropout
 from CLSmodule import classify
 from tensorflow.keras.applications import MobileNetV2
 
-hand_img = cv2.imread('../PLSU/img/image5.jpg')
-mask_img = cv2.imread('../PLSU/Mask/image5.png')
+hand_img = cv2.imread('../PLSU/img/image2.jpg')
+mask_img = cv2.imread('../PLSU/Mask/image2.png')
 image_height, image_width, _ = hand_img.shape
+
+mask_img = cv2.cvtColor(mask_img, cv2.COLOR_BGR2RGB)
+low_intensity_pixels = np.where(np.all(mask_img < 200, axis=-1))
+
+for y, x in zip(low_intensity_pixels[0], low_intensity_pixels[1]):
+    mask_img[y, x] = [0, 0, 0]
 
 # MediaPipe Hands 초기화
 with mp.solutions.hands.Hands(static_image_mode=True, max_num_hands=2, min_detection_confidence=0.5) as hands:
