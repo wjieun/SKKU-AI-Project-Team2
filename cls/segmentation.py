@@ -21,15 +21,15 @@ def heic_to_jpeg(heic_dir, jpeg_dir):
     image.save(jpeg_dir,"JPEG")
 
 def remove_background(jpg_dir, output_dir):
-  fill_color = (255,255,255)
-  img = Image.open(jpg_dir) 
-  out = remove(img) 
-  im = out.convert('RGBA')
-  if im.mode in ('RGBA', 'LA'):
-    background = Image.new(im.mode[:-1], im.size, fill_color)
-    background.paste(im, im.split()[-1]) # omit transparency
+    fill_color = (255,255,255)
+    img = Image.open(jpg_dir) 
+    out = remove(img) 
+    im = out.convert('RGBA')
+    if im.mode in ('RGBA', 'LA'):
+        background = Image.new(im.mode[:-1], im.size, fill_color)
+        background.paste(im, im.split()[-1]) # omit transparency
     im = background
-  im.convert("RGB").save(output_dir)
+    im.convert("RGB").save(output_dir)
 
 def preprocess_image(img_path, size=(256, 256)):
     image = cv2.imread(img_path)
