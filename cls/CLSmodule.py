@@ -8,29 +8,6 @@ from PIL import Image
 from skimage.morphology import skeletonize
 import mediapipe as mp
 
-def extract_feature(line, image_height, image_width):
-    image_size = np.array([image_height, image_width], dtype=np.float32)
-    feature = np.append(np.min(line, axis=0)[:2]/image_size, np.max(line, axis=0)[:2]/image_size)
-    feature *= 10
-    N = 10
-    print(line)
-    step = len(line)//N
-    print("Step :", step)
-    for i in range(N):
-        l = line[i*step:(i+1)*step]
-        print("I :", l)
-        mean_values = np.mean(l, axis=0)
-        print("Mean_Values : ", mean_values)
-        if mean_values.size >= 3:
-            feature = np.append(feature, mean_values[2:])
-            print("size 3 이상")
-            print("Temp Feature : ", feature)
-        else:
-            print("else")
-            feature = np.append(feature, np.zeros(3 - mean_values.size))
-
-    print("Feature : ", feature)
-    return feature
 
 def group(img):
     # (1) build a graph
@@ -196,49 +173,6 @@ def rectify(idx):
         rectified_image = np.asarray(pil_img.resize((1024, 1024), resample=Image.NEAREST))
         return rectified_image
 
-def get_cluster_centers(new_centers=False):
-    if new_centers:
-        # prepare good samples
-        good = [12,104,193,212,220,249,256,295,304,396,402,487,698,908,992]
-        for idx in good:
-            rectified = rectify(idx)
-            cv2.imwrite("good_sample/image"+str(idx)+".png",rectified)
-
-        # put all data in feature space
-        data = np.empty((0,24))
-        for img_path in glob.glob("good_sample/*.png"):
-            img = cv2.imread(img_path)
-            skel_img = cv2.cvtColor(skeletonize(img), cv2.COLOR_BGR2GRAY)
-            lines = group(skel_img)
-            for line in lines:
-                feature = extract_feature(line, 1024, 1024)
-                data = np.vstack((data,feature))
-
-        # k-means clustering (k=3)
-        criteria = (cv2.TERM_CRITERIA_EPS|cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0)
-        ret, label, centers = cv2.kmeans(data.astype(np.float32), 3, None, criteria, 10, cv2.KMEANS_RANDOM_CENTERS)
-
-        # sort centers according to max_y
-        centers = list(centers)
-        centers.sort(key = lambda x : x[2])
-    else:
-        centers = [np.array([5.232849  , 4.881592  , 6.3223267 , 6.64093   , 0.8113839 ,
-                            0.655735  , 0.82874316, 0.74796075, 0.7993417 , 0.8345605 ,
-                            0.68143266, 0.90320605, 0.5769709 , 0.9721149 , 0.53258324,
-                            0.98307294, 0.4804058 , 0.9829783 , 0.36796156, 0.99141085,
-                            0.24345541, 0.99082345, 0.30017138, 0.9736235 ], dtype=np.float32),
-                     np.array([5.645419  , 4.169626  , 7.126243  , 6.0026045 , 0.3532842 ,
-                            0.928315  , 0.4692493 , 0.9680717 , 0.578683  , 0.9680221 ,
-                            0.7227269 , 0.9454175 , 0.7741767 , 0.9495983 , 0.7802345 ,
-                            0.89685285, 0.8743354 , 0.8478447 , 0.85625464, 0.82669544,
-                            0.88459945, 0.8000444 , 0.8956431 , 0.74734426], dtype=np.float32),
-                     np.array([5.755994  , 3.8910964 , 8.680631  , 5.3926454 , 0.4247846 ,
-                            0.93111324, 0.6940754 , 0.9203782 , 0.8567455 , 0.767301  ,
-                            0.9177662 , 0.6054738 , 0.9801044 , 0.47111732, 0.9812451 ,
-                            0.34593108, 0.97122467, 0.28715244, 0.9036454 , 0.26124895,
-                            0.8069528 , 0.25324377, 0.59989274, 0.32016128], dtype=np.float32)]
-    
-    return centers
 
 def save_each_line(palmline_img, lines):
     height, width, _ = palmline_img.shape
