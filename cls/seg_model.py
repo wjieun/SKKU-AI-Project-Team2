@@ -1,143 +1,244 @@
 import torch
+from torch import nn
+
+from einops import rearrange, repeat
+from einops.layers.torch import Rearrange
+
+import torch
 import torch.nn as nn
-import torchvision
+import torch.nn.functional as F
 
-class ConvBlock(nn.Module):
-    """
-    Helper module that consists of a Conv -> BN -> ReLU
-    """
 
-    def __init__(self, in_channels, out_channels, padding=1, kernel_size=3, stride=1, with_nonlinearity=True):
+class DoubleConv(nn.Module):
+    """(convolution => [BN] => ReLU) * 2"""
+
+    def __init__(self, in_channels, out_channels, mid_channels=None):
         super().__init__()
-        self.conv = nn.Conv2d(in_channels, out_channels, padding=padding, kernel_size=kernel_size, stride=stride)
-        self.bn = nn.BatchNorm2d(out_channels)
-        self.relu = nn.ReLU()
-        self.with_nonlinearity = with_nonlinearity
+        if not mid_channels:
+            mid_channels = out_channels
+        self.double_conv = nn.Sequential(
+            nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(mid_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True)
+        )
 
     def forward(self, x):
-        x = self.conv(x)
-        x = self.bn(x)
-        if self.with_nonlinearity:
-            x = self.relu(x)
-        return x
+        return self.double_conv(x)
 
 
-class Bridge(nn.Module):
-    """
-    This is the middle layer of the UNet which just consists of some
-    """
+class Down(nn.Module):
+    """Downscaling with maxpool then double conv"""
 
     def __init__(self, in_channels, out_channels):
         super().__init__()
-        self.bridge = nn.Sequential(
-            ConvBlock(in_channels, out_channels),
-            ConvBlock(out_channels, out_channels)
+        self.maxpool_conv = nn.Sequential(
+            nn.MaxPool2d(2),
+            DoubleConv(in_channels, out_channels)
         )
 
     def forward(self, x):
-        return self.bridge(x)
+        return self.maxpool_conv(x)
 
 
-class UpBlockForUNetWithResNet50(nn.Module):
-    """
-    Up block that encapsulates one up-sampling step which consists of Upsample -> ConvBlock -> ConvBlock
-    """
+class Up(nn.Module):
+    """Upscaling then double conv"""
 
-    def __init__(self, in_channels, out_channels, up_conv_in_channels=None, up_conv_out_channels=None,
-                 upsampling_method="conv_transpose"):
+    def __init__(self, in_channels, out_channels, bilinear=True):
         super().__init__()
 
-        if up_conv_in_channels == None:
-            up_conv_in_channels = in_channels
-        if up_conv_out_channels == None:
-            up_conv_out_channels = out_channels
+        # if bilinear, use the normal convolutions to reduce the number of channels
+        if bilinear:
+            self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+            self.conv = DoubleConv(in_channels, out_channels, in_channels // 2)
+        else:
+            self.up = nn.ConvTranspose2d(in_channels , in_channels // 2, kernel_size=2, stride=2)
+            self.conv = DoubleConv(in_channels, out_channels)
 
-        if upsampling_method == "conv_transpose":
-            self.upsample = nn.ConvTranspose2d(up_conv_in_channels, up_conv_out_channels, kernel_size=2, stride=2)
-        elif upsampling_method == "bilinear":
-            self.upsample = nn.Sequential(
-                nn.Upsample(mode='bilinear', scale_factor=2),
-                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1)
-            )
-        self.conv_block_1 = ConvBlock(in_channels, out_channels)
-        self.conv_block_2 = ConvBlock(out_channels, out_channels)
 
-    def forward(self, up_x, down_x):
-        """
+    def forward(self, x1, x2):
+        x1 = self.up(x1)
+        # input is CHW
+        diffY = x2.size()[2] - x1.size()[2]
+        diffX = x2.size()[3] - x1.size()[3]
 
-        :param up_x: this is the output from the previous up block
-        :param down_x: this is the output from the down block
-        :return: upsampled feature map
-        """
-        x = self.upsample(up_x)
-        x = torch.cat([x, down_x], 1)
-        x = self.conv_block_1(x)
-        x = self.conv_block_2(x)
+        x1 = F.pad(x1, [diffX // 2, diffX - diffX // 2,
+                        diffY // 2, diffY - diffY // 2])
+        x = torch.cat([x2, x1], dim=1)
+        return self.conv(x)
+
+
+class OutConv(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(OutConv, self).__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+
+    def forward(self, x):
+        return self.conv(x)
+
+
+# helpers
+
+def pair(t):
+    return t if isinstance(t, tuple) else (t, t)
+
+# classes
+
+class PreNorm(nn.Module):
+    def __init__(self, dim, fn):
+        super().__init__()
+        self.norm = nn.LayerNorm(dim)
+        self.fn = fn
+    def forward(self, x, **kwargs):
+        return self.fn(self.norm(x), **kwargs)
+
+class FeedForward(nn.Module):
+    def __init__(self, dim, hidden_dim, dropout = 0.):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(dim, hidden_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, dim),
+            nn.Dropout(dropout)
+        )
+    def forward(self, x):
+        return self.net(x)
+
+class Attention(nn.Module):
+    def __init__(self, dim, heads = 8, dim_head = 64, dropout = 0.):
+        super().__init__()
+        inner_dim = dim_head *  heads
+        project_out = not (heads == 1 and dim_head == dim)
+
+        self.heads = heads
+        self.scale = dim_head ** -0.5
+
+        self.attend = nn.Softmax(dim = -1)
+        self.to_qkv = nn.Linear(dim, inner_dim * 3, bias = False)
+
+        self.to_out = nn.Sequential(
+            nn.Linear(inner_dim, dim),
+            nn.Dropout(dropout)
+        ) if project_out else nn.Identity()
+
+    def forward(self, x):
+        qkv = self.to_qkv(x).chunk(3, dim = -1)
+        q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = self.heads), qkv)
+
+        dots = torch.matmul(q, k.transpose(-1, -2)) * self.scale
+
+        attn = self.attend(dots)
+
+        out = torch.matmul(attn, v)
+        out = rearrange(out, 'b h n d -> b n (h d)')
+        return self.to_out(out)
+
+class Transformer(nn.Module):
+    def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout = 0.):
+        super().__init__()
+        self.layers = nn.ModuleList([])
+        for _ in range(depth):
+            self.layers.append(nn.ModuleList([
+                PreNorm(dim, Attention(dim, heads = heads, dim_head = dim_head, dropout = dropout)),
+                PreNorm(dim, FeedForward(dim, mlp_dim, dropout = dropout))
+            ]))
+    def forward(self, x):
+        for attn, ff in self.layers:
+            x = attn(x) + x
+            x = ff(x) + x
+        return x
+
+class ViT(nn.Module):
+    def __init__(self, *, image_size, patch_size, dim, depth, heads, mlp_dim, pool = 'cls', channels = 512, dim_head = 64, dropout = 0., emb_dropout = 0.):
+        super().__init__()
+        image_height, image_width = pair(image_size)
+        patch_height, patch_width = pair(patch_size)
+
+        assert image_height % patch_height == 0 and image_width % patch_width == 0, 'Image dimensions must be divisible by the patch size.'
+
+        num_patches = (image_height // patch_height) * (image_width // patch_width)
+        patch_dim = channels * patch_height * patch_width
+        assert pool in {'cls', 'mean'}, 'pool type must be either cls (cls token) or mean (mean pooling)'
+
+        self.to_patch_embedding = nn.Sequential(
+            Rearrange('b c (h p1) (w p2) -> b (h w) (p1 p2 c)', p1 = patch_height, p2 = patch_width),
+            nn.Linear(patch_dim, dim),
+        )
+
+        self.pos_embedding = nn.Parameter(torch.randn(1, num_patches + 1, dim))
+        self.cls_token = nn.Parameter(torch.randn(1, 1, dim))
+        self.dropout = nn.Dropout(emb_dropout)
+
+        self.transformer = Transformer(dim, depth, heads, dim_head, mlp_dim, dropout)
+
+        self.pool = pool
+        self.to_latent = nn.Identity()
+
+
+    def forward(self, img):
+        x = self.to_patch_embedding(img)
+        b, n, _ = x.shape
+        cls_tokens = repeat(self.cls_token, '() n d -> b n d', b = b)
+        x = torch.cat((cls_tokens, x), dim=1)
+        x += self.pos_embedding[:, :(n + 1)]
+        x = self.dropout(x)
+        x = self.transformer(x)
+        x = x.mean(dim = 1) if self.pool == 'mean' else x[:, 0]
+        x = self.to_latent(x)
         return x
 
 
-class UNetWithResnet50Encoder(nn.Module):
-    DEPTH = 6
+class UNet(nn.Module):
+    def __init__(self, n_channels, n_classes, bilinear=True):
+        super(UNet, self).__init__()
+        self.n_channels = n_channels
+        self.n_classes = n_classes
+        self.bilinear = bilinear
 
-    def __init__(self, n_channels=3, n_classes=1):
-        super().__init__()
-        resnet = torchvision.models.resnet.resnet50(pretrained=True)
-        down_blocks = []
-        up_blocks = []
+        self.inc = DoubleConv(n_channels, 64)
+        self.down1 = Down(64, 128)
+        self.down2 = Down(128, 256)
+        self.down3 = Down(256, 512)
+        factor = 2 if bilinear else 1
+        self.down4 = Down(512, 1024 // factor)
 
-        # 입력 채널을 n_channels로 조정
-        self.input_block = nn.Sequential(
-            nn.Conv2d(n_channels, 64, kernel_size=7, stride=2, padding=3, bias=False),
-            *list(resnet.children())[1:3]
-        )
-        self.input_pool = list(resnet.children())[3]
+        self.vit = ViT(image_size = 32,patch_size = 8,dim = 2048, depth = 2, heads = 16,mlp_dim = 12,channels = 512) #dim%head=0
+        self.vit_conv = nn.Conv2d(32,512,kernel_size = 1,padding = 0) #to increase the number of channels
+        self.vit_linear = nn.Linear(64,1024)
 
-        for bottleneck in list(resnet.children()):
-            if isinstance(bottleneck, nn.Sequential):
-                down_blocks.append(bottleneck)
-        self.down_blocks = nn.ModuleList(down_blocks)
-        self.bridge = Bridge(2048, 2048)
-        up_blocks.append(UpBlockForUNetWithResNet50(2048, 1024))
-        up_blocks.append(UpBlockForUNetWithResNet50(1024, 512))
-        up_blocks.append(UpBlockForUNetWithResNet50(512, 256))
-        up_blocks.append(UpBlockForUNetWithResNet50(in_channels=128 + 64, out_channels=128,
-                                                    up_conv_in_channels=256, up_conv_out_channels=128))
-        up_blocks.append(UpBlockForUNetWithResNet50(in_channels=64 + 3, out_channels=64,
-                                                    up_conv_in_channels=128, up_conv_out_channels=64))
+        self.up1 = Up(1024, 512 // factor, bilinear)
+        self.up2 = Up(512, 256 // factor, bilinear)
+        self.up3 = Up(256, 128 // factor, bilinear)
+        self.up4 = Up(128, 64, bilinear)
+        self.outc = OutConv(64, n_classes)
 
-        self.up_blocks = nn.ModuleList(up_blocks)
+    def forward(self, x):
+        x1 = self.inc(x)
+        x2 = self.down1(x1)
+        x3 = self.down2(x2)
+        x4 = self.down3(x3)
+        x5 = self.down4(x4)
 
-        self.out = nn.Conv2d(64, n_classes, kernel_size=1, stride=1)
+        #applying Vision Transformer
+        x6 = self.vit(x5) #[4,2048]
+        x6 = torch.reshape(x6,(-1,32,8,8)) #[4,32,8,8]
+        x7 = self.vit_conv(x6) #[4,512,8,8]
+        x8 = self.vit_linear(torch.reshape(x7,(-1,512,64))) #[4,512,1024]
+        x9 = torch.reshape(x8,(-1,512,32,32))
 
-    def forward(self, x, with_output_feature_map=False):
-        pre_pools = dict()
-        pre_pools[f"layer_0"] = x
-        x = self.input_block(x)
-        pre_pools[f"layer_1"] = x
-        x = self.input_pool(x)
-
-        for i, block in enumerate(self.down_blocks, 2):
-            x = block(x)
-            if i == (UNetWithResnet50Encoder.DEPTH - 1):
-                continue
-            pre_pools[f"layer_{i}"] = x
-
-        x = self.bridge(x)
-
-        for i, block in enumerate(self.up_blocks, 1):
-            key = f"layer_{UNetWithResnet50Encoder.DEPTH - 1 - i}"
-            x = block(x, pre_pools[key])
-        output_feature_map = x
-        x = self.out(x)
-        del pre_pools
-        if with_output_feature_map:
-            return x, output_feature_map
-        else:
-            return x
+        x = self.up1(x9, x4)
+        x = self.up2(x, x3)
+        x = self.up3(x, x2)
+        x = self.up4(x, x1)
+        logits = self.outc(x)
+        return logits
         
 
 # Use as below
 # device = torch.device('cuda') if torch.cuda.is_available else torch.device('cpu')
-# model = UNetWithResnet50Encoder(n_channels=3, n_classes=1).to(device)
-# model.load_state_dict(torch.load('/content/drive/MyDrive/인지프/checkpoints/best_model_vgg16.pth'))
+# model = UNet(n_channels=3, n_classes=1).to(device)
+# model.load_state_dict(torch.load('/content/drive/MyDrive/인지프/checkpoints/best_model_vit.pth'))
 # model.eval()
