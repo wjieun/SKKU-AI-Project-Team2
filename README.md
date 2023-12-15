@@ -90,7 +90,7 @@ Palmstiny: **Palm**istry + De**stiny**
 - Scheduler: scheduler 별 실험 코드
 
 
-## 사용 방법 (Usage)
+## 사용 방법 (Usage) - 로컬에서 실행(GPU 필요)
 
 1. **메인 폴더로 이동하기**:
    저장소를 클론하거나 다운로드한 후, 터미널을 열고 메인 폴더로 이동합니다.
@@ -110,7 +110,21 @@ Palmstiny: **Palm**istry + De**stiny**
    `palmstiny.py` 스크립트를 실행하여 손금 이미지 처리를 시작합니다. 입력 이미지는 `-input` 옵션을 통해 지정합니다.
 
    ```bash
-   python3 palmstiny.py -input ./image/sample_hand.jpg
+   python3 palmstiny.py -input ./image/sample1.jpg
    ```
 
    이 명령어는 `./image/sample_hand.jpg` 파일을 입력으로 사용하여 손금 이미지를 처리합니다.
+
+## 사용 방법 (Usage) - 구글 Colab에서 실행
+
+1. **main 폴더 다운로드**:
+   저장소를 클론하거나 다운로드한 후, 메인 폴더를 구글 드라이브에 업로드합니다.
+
+
+2. **프로그램 실행하기**:
+   `palmstiny.ipynb` 파일을 열고, 구글 드라이브를 마운트한 후, main 폴더 경로를 수정합니다.
+
+   ```bash
+   cd /content/drive/MyDrive/path/to/main
+   ```
+   ctrl+F9 를 누르고 모두 실행합니다.
