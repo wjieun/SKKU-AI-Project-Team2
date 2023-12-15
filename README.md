@@ -89,6 +89,15 @@ Palmstiny: **Palm**istry + De**stiny**
 - Scheduler: scheduler 별 실험 코드
 
 
+## 모델 다운로드 (DVC)
+segmentation의 모델 파일 크기가 크기 때문에, dvc를 이용해 다운로드할 수 있습니다.
+
+```bash
+   pip install dvc
+```
+
+
+
 ## 사용 방법 (Usage) - 로컬에서 실행(GPU 필요)
 
 1. **메인 폴더로 이동하기**:
