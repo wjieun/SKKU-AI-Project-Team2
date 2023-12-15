@@ -4,6 +4,7 @@ This repository is for SKKU AI project practice class.
 
 ## Introduction
 Palmstiny: **Palm**istry + De**stiny**
+
 본 프로젝트는 유년 시절의 손금 운세를 추억하며, 사람들에게 즐거움을 주고 일상에 작은 재치를 주고자 하는 아이디어에서 출발하였다.
 손금 운세라는 전통적인 문화 요소를 현대 기술과 접목시킴으로써, 새로운 형태의 엔터테인먼트를 제공하는 것을 목표로 한다.
 
