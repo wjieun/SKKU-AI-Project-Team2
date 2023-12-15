@@ -73,7 +73,6 @@ Palmstiny: **Palm**istry + De**stiny**
 :분류 모델 코드
 - binary/mobilenet : mobilenet-binary 모델 개발/학습 코드
 - categorical: categorical 모델 개발/학습 코드
-- 나머지 코드들 짤막한 설명 부탁
 
 ### main
 : 코드 통합 버전
