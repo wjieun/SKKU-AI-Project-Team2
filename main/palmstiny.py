@@ -25,12 +25,13 @@ def main():
     bg_removed_path = os.path.join(os.path.dirname(image_path), bg_removed)
 
     mask_image = f"{base_name}_mask{ext}"
+    mask_path = f'./mask/{mask_image}'
     #segmentation 실행
     remove_background(image_path, bg_removed_path)
-    detect(bg_removed_path, model , device, f'./mask/{mask_image}')
+    detect(bg_removed_path, mask_path, model , device, True)
     
     #classification 실행
-    (head_pred_class, life_pred_class, heart_pred_class) = classify_hand_image(bg_removed_path, f'./mask/{mask_image}')
+    (head_pred_class, life_pred_class, heart_pred_class) = classify_hand_image(bg_removed_path, mask_path)
 
     heart_line_interpretation = ["활동력이 풍부하며 정이 많고 열정적이며 관대한 사람일 것이다.", "감정과 정서가 섬세하고 예민하며 감성이 풍부한 사람일 가능성이 크다."]
     head_line_interpretation = ["영리하고 정신 집중력이 뛰어나다.", "지적 욕망이 강하고 섬세하며 관심영역이 넓고 재능이 많다."]

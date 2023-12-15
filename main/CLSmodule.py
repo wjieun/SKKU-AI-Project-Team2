@@ -197,7 +197,7 @@ def save_each_line(palmline_img, lines):
     return life_img, head_img, heart_img
 
 # classify lines using l2 distance with centers in feature space
-def classify_lines(centers, lines, image_height, image_width, point_total):
+def classify_lines(lines, image_height, image_width, point_total):
     life_lines_dist = []
     head_lines_dist = []
     heart_lines_dist = []
@@ -253,13 +253,13 @@ def classify_lines(centers, lines, image_height, image_width, point_total):
     return classified_lines
 
 def classify(palmline_img, point_total):
-    centers = get_cluster_centers()
+
 
     skel_img = cv2.cvtColor(skeletonize(palmline_img), cv2.COLOR_BGR2GRAY) #스켈레톤화
     cv2.imwrite('results/skel_img.jpg',skel_img)
 
     lines = group(skel_img)
-    lines = classify_lines(centers, lines, palmline_img.shape[0], palmline_img.shape[1], point_total)
+    lines = classify_lines(lines, palmline_img.shape[0], palmline_img.shape[1], point_total)
     lines = save_each_line(palmline_img, lines)
 
     return lines

@@ -71,4 +71,4 @@ def detect(jpeg_dir, output_dir, model, device, save=True):
 # heic_to_jpeg("./image/IMG_6732.HEIC", "./image/IMG_6732.jpg")
 # remove_background('IMG_1726.jpg', 'IMG_1726_bg.jpg')
 # 밑의 모델은 seg_model을 통해 정의합니다.
-# detect("./image/IMG_6732.jpg", model , device, './mask/IMG_6732_mask.jpg')
+# detect("./image/IMG_6732.jpg", './mask/IMG_6732_mask.jpg',  model , device)
